@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>자기소개 + 패스키 로그인</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--mut:#667085;--pri:#0f6b6b;--line:#d9dee7;--bad:#b42318;--ok:#067647}
+  @media (prefers-color-scheme:dark){:root{--bg:#12161d;--card:#1b212b;--fg:#e8ecf3;--mut:#9aa6b8;--pri:#4cc2c2;--line:#2c3544;--bad:#ff8a80;--ok:#6ee7a8}}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,'Noto Sans KR',sans-serif}
+  main{max-width:760px;margin:0 auto;padding:24px 16px 64px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:20px}
+  h1{margin:0 0 4px}h2{margin:0 0 12px;font-size:1.15rem}
+  .tag{display:inline-block;font-size:.75rem;font-weight:700;padding:2px 10px;border-radius:99px;margin-bottom:8px}
+  .pub .tag{background:#dff3e8;color:#067647}.priv .tag{background:#fde7e4;color:#b42318}
+  .priv{border:2px dashed var(--bad)}
+  .mut{color:var(--mut)}
+  input{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;min-width:0}
+  button{padding:10px 16px;border:0;border-radius:8px;background:var(--pri);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  button.sec{background:transparent;color:var(--pri);border:1px solid var(--pri)}
+  button.del{background:transparent;color:var(--bad);border:1px solid var(--bad)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  #msg{padding:10px 12px;border-radius:8px;margin:8px 0;display:none;white-space:pre-wrap}
+  #msg.ok{display:block;background:#dff3e8;color:#067647}#msg.err{display:block;background:#fde7e4;color:#b42318}
+  li{margin:6px 0}.pk{border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0}
+  code{word-break:break-all;font-size:.8rem}
+</style>
+</head>
+<body>
+<main>
+  <section class="pub" id="public">
+    <span class="tag">공개 영역 · 누구나 볼 수 있음</span>
+    <h1>안녕하세요, 김가상입니다 (가상 인물)</h1>
+    <p>웹 개발을 공부하는 학생입니다. 이 페이지의 이름·연락처·내용은 모두 과제용으로 지어낸 가상의 정보입니다.</p>
+    <ul><li>관심사: 웹 보안, 인증, 사용자 경험</li><li>배우는 중: HTML/CSS, JavaScript, Node.js</li><li>취미: 산책, 보드게임</li></ul>
+  </section>
+
+  <div id="msg" role="status"></div>
+
+  <section id="auth">
+    <h2>패스키로 로그인 / 계정 만들기 (비밀번호 없음)</h2>
+    <div class="row">
+      <input id="regName" placeholder="계정 이름 (예: minsu)" autocomplete="username webauthn">
+      <input id="pkName" placeholder="패스키 이름 (예: 내 노트북)">
+      <button id="btnReg">패스키로 계정 만들기</button>
+    </div>
+    <div class="row"><button id="btnLogin" class="sec">패스키로 로그인</button></div>
+    <p class="mut">패스키 등록·로그인은 https 주소(개발 중에는 localhost)에서만 동작합니다.</p>
+  </section>
+
+  <section class="priv" id="private">
+    <span class="tag">🔒 비공개 영역 · 패스키 로그인 후에만 보임</span>
+    <div id="lockedView"><p class="mut">로그인하지 않았습니다. 비공개 내용은 서버가 인증된 요청에만 보내 주므로 이 페이지의 소스에도 들어 있지 않습니다.</p></div>
+    <div id="privView" hidden>
+      <h2><span id="who"></span>님의 비공개 자료</h2>
+      <ul id="notes"></ul>
+      <div class="row"><input id="newNote" placeholder="메모 추가"><button id="btnNote" class="sec">추가</button></div>
+      <h2 style="margin-top:20px">등록된 패스키</h2>
+      <div id="pkList"></div>
+      <div class="row"><input id="pkName2" placeholder="새 패스키 이름"><button id="btnAdd" class="sec">패스키 추가 등록</button></div>
+      <div class="row"><button id="btnLogout">로그아웃</button></div>
+    </div>
+  </section>
+</main>
+<script src="/simplewebauthn-browser.js"></script>
+<script>
+const { startRegistration, startAuthentication, browserSupportsWebAuthn } = SimpleWebAuthnBrowser;
+const $ = (id) => document.getElementById(id);
+const msg = (t, ok) => { const m = $('msg'); m.textContent = t; m.className = ok ? 'ok' : 'err'; };
+async function call(method, url, body) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
+  const j = await r.json().catch(() => ({}));
+  return { status: r.status, ok: r.ok, j };
+}
+function explain(e) {
+  if (e.name === 'NotAllowedError') return '패스키 등록/로그인이 취소되었거나 시간이 초과되었습니다. 서버에는 아무것도 저장되지 않았습니다.';
+  if (e.name === 'InvalidStateError') return '이 기기/인증기에는 이미 이 계정의 패스키가 등록되어 있습니다. 다른 인증기(보안 키, 다른 기기, 다른 비밀번호 관리자)로 등록하세요.';
+  if (e.name === 'SecurityError') return 'https 주소(또는 localhost)에서만 패스키를 쓸 수 있습니다.';
+  return '오류: ' + (e.message || e);
+}
+async function register(username, name) {
+  if (!browserSupportsWebAuthn()) return msg('이 브라우저는 패스키를 지원하지 않습니다.');
+  const o = await call('POST', '/api/register/options', { username });
+  if (!o.ok) return msg(o.j.error);
+  let att;
+  try { att = await startRegistration({ optionsJSON: o.j }); } catch (e) { return msg(explain(e)); }
+  const v = await call('POST', '/api/register/verify', { response: att, name });
+  if (!v.ok) return msg(v.j.error);
+  msg('패스키 등록 완료. 서버에 저장된 값(공개키 등):\n' + JSON.stringify(v.j.stored, null, 1) + '\n' + v.j.note, true);
+  refresh();
+}
+$('btnReg').onclick = () => register($('regName').value, $('pkName').value);
+$('btnAdd').onclick = () => register(null, $('pkName2').value);
+$('btnLogin').onclick = async () => {
+  if (!browserSupportsWebAuthn()) return msg('이 브라우저는 패스키를 지원하지 않습니다.');
+  const o = await call('POST', '/api/login/options', { username: $('regName').value });
+  if (!o.ok) return msg(o.j.error);
+  let asr;
+  try { asr = await startAuthentication({ optionsJSON: o.j }); } catch (e) { return msg(explain(e)); }
+  const v = await call('POST', '/api/login/verify', { response: asr });
+  if (!v.ok) return msg(v.j.error);
+  msg(v.j.user + '님, 서명 검증 성공 — 로그인되었습니다.', true); refresh();
+};
+$('btnLogout').onclick = async () => { await call('POST', '/api/logout'); msg('로그아웃되었습니다.', true); refresh(); };
+$('btnNote').onclick = async () => { const r = await call('POST', '/api/private/notes', { text: $('newNote').value }); if (!r.ok) return msg(r.j.error); $('newNote').value = ''; refresh(); };
+async function refresh() {
+  const p = await call('GET', '/api/private');
+  const locked = !p.ok;
+  $('lockedView').hidden = !locked; $('privView').hidden = locked; $('auth').hidden = !locked;
+  if (locked) return;
+  $('who').textContent = p.j.user;
+  $('notes').replaceChildren(...p.j.notes.map((t) => Object.assign(document.createElement('li'), { textContent: t })));
+  const k = await call('GET', '/api/passkeys');
+  $('pkList').replaceChildren(...k.j.passkeys.map((x) => {
+    const d = document.createElement('div'); d.className = 'pk';
+    const t = document.createElement('div'); t.innerHTML = '<b></b> <span class="mut"></span><br><span class="mut"></span>';
+    t.querySelector('b').textContent = x.name;
+    t.querySelectorAll('span')[0].textContent = '· 등록일 ' + new Date(x.createdAt).toLocaleString('ko-KR');
+    t.querySelectorAll('span')[1].textContent = '저장 위치: ' + x.storedAt;
+    const b = document.createElement('button'); b.className = 'del'; b.textContent = '삭제';
+    b.onclick = async () => { const r = await call('DELETE', '/api/passkeys/' + encodeURIComponent(x.id)); msg(r.ok ? '삭제했습니다. 남은 패스키: ' + r.j.remaining : r.j.error, r.ok); refresh(); };
+    d.append(t, b); return d;
+  }));
+}
+refresh();
+</script>
+</body>
+</html>

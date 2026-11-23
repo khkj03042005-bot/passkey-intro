@@ -1,0 +1,53 @@
+== C13~C18 로그인 전 접근 ==
+GET /api/private (로그인 없음) → 401 {"error":"로그인이 필요합니다"}
+PASS T08-C16/C17 비로그인 비공개 요청 거절
+PASS T08-C18 비로그인 응답 본문에 비공개 내용 없음
+== 등록 (C19~C26) ==
+PASS T08-C20 등록 요청마다 챌린지 다름: BehE0LnON_ / AIfhsUtx3O
+취소 시 화면 안내: 패스키 등록/로그인이 취소되었거나 시간이 초과되었습니다. 서버에는 아무것도 저장되지 않았습니다.
+PASS T08-C25 취소 후 cancelme 계정은 저장되지 않음(다시 등록 가능)
+등록 화면 메시지: 패스키 등록 완료. 서버에 저장된 값(공개키 등): | { |  "id": "x5qkD8xl8IModzekcQ_-qqFp5CrzuT47cnHyNAfh_Tw", |  "publicKey": "pAEBAycgBiFYIHx2QcDqU517uxjd_4hLFYQt3FkN39A3DhYEvckapCiC", |  "counter": 1, |  "deviceType": "singleDevice", |  "backedUp": false | } | 서버에는 공개키와 자격 증명 ID 같은 공개 메타데이터만 저장됩니다. 개인키·비밀번호는 서버로 전송되지 않습니다.
+등록 요청 본문(개인키·비밀번호 필드 없음): /register/options {"username":"alice"}
+   /register/options {"username":"alice"}
+   /register/options {"username":"cancelme"}
+   /register/options {"username":"cancelme"}
+   /register/options {"username":"alice"}
+   /register/verify {"response":{"id":"x5qkD8xl8IModzekcQ_-qqFp5CrzuT47cnHyNAfh_Tw","rawId":"x5qkD8xl8IModzekcQ_-qqFp5CrzuT47cnHyNAfh_Tw","response":{"attestationObject":"o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YViBSZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NFAAAAAQECAwQFBgcIAQIDBAUGBwgAIMeapA_MZfCDKHc3pHEP_qqhaeQq87k-O3Jx8
+PASS T08-C23 등록 요청 본문에 개인키/비밀번호 없음
+서버 저장 값 키 목록: id,publicKey,counter,transports,name,createdAt,deviceType,backedUp | 이름: 노트북 내장
+PASS T08-C21/22 서버엔 공개키·ID만 저장
+== 로그인 (C27~C35) ==
+PASS T08-C27/28 로그인 챌린지 매번 새로 발급: gqBvsr9-V1 / 7B1a2QhlEm
+로그인 성공 화면: alice님, 서명 검증 성공 — 로그인되었습니다.
+PASS T08-C30 서명 검증 성공 요청 기록
+같은 서명/챌린지 재전송 → 400 {"error":"이미 사용했거나 발급한 적 없는 챌린지입니다"}
+PASS T08-C31 사용한 챌린지 재사용 거절
+위조(새 챌린지 + 옛 서명) → 401 {"error":"서명 검증 실패: Response counter value 2 was lower than expected 2"}
+PASS T08-C29/30 틀린 서명 거절
+로그아웃 후 GET /api/private → 401 {"error":"로그인이 필요합니다"}
+PASS T08-C33 로그아웃 후 거절
+PASS T08-C34 로그아웃 후 세션 쿠키 제거됨(기록에는 값 미기재)
+== 분실 대비 (C42~C46) ==
+같은 인증기 두 번째 등록 시도: 이 기기/인증기에는 이미 이 계정의 패스키가 등록되어 있습니다. 다른 인증기(보안 키, 다른 기기, 다른 비밀번호 관리자)로 등록하세요.
+패스키 목록: 노트북 내장 · 등록일 2026. 11. 23. 오전 3:47:01 / 저장 위치: 이 기기/보안 키 안에만 저장(동기화 안 됨) / 삭제
+   보안 키 · 등록일 2026. 11. 23. 오전 3:47:02 / 저장 위치: 이 기기/보안 키 안에만 저장(동기화 안 됨) / 삭제
+PASS T08-C42/43 패스키 2개 목록 표시
+첫 패스키 삭제 → 200 {"deleted":"x5qkD8xl8IModzekcQ_-qqFp5CrzuT47cnHyNAfh_Tw","remaining":1}
+마지막 패스키 삭제 시도 → 409 {"error":"마지막 패스키는 삭제할 수 없습니다(삭제하면 로그인 불가). 먼저 다른 패스키를 등록하세요"}
+PASS T08-C44/46 하나 삭제 가능, 마지막은 거절
+PASS T08-C44 남은 패스키(보안 키)로 로그인 성공
+삭제된 패스키는 인증기에 있어도 서버가 거절:
+  → 401 {"error":"등록되지 않았거나 삭제된 패스키입니다"}
+PASS T08-C45 삭제한 패스키로는 로그인 불가
+== 계정 간 격리 (C36~C40) ==
+alice 본인 자료: {"user":"alice","notes":["[가상] alice의 준비 중인 프로젝트 메모: 할 일 앱 프로토타입","[가상] alice의 지원하려는 곳 목록: 가짜회사 A, 가짜회사 B","[가상] alice의 개인 회고: 이번 달에는 꾸준히 운동하기"]}
+bob 본인 자료: {"user":"bob","notes":["[가상] bob의 준비 중인 프로젝트 메모: 할 일 앱 프로토타입","[가상] bob의 지원하려는 곳 목록: 가짜회사 A, 가짜회사 B","[가상] bob의 개인 회고: 이번 달에는 꾸준히 운동하기"]}
+PASS T08-C36 두 계정에 각각 다른 비공개 자료 3개
+alice 세션으로 ?user=bob 요청 → 200 {"user":"alice","notes":["[가상] alice의 준비 중인 프로젝트 메모: 할 일 앱 프로토타입","[가상] alice의 지원하려는 곳 목록: 가짜회사 A, 가짜회사 B","[가상] alice의 개인 회고: 이번 달에는 꾸준히 운동하기"]}
+alice 세션으로 bob 패스키 삭제 시도 → 404 {"error":"내 계정의 패스키가 아닙니다"}
+PASS T08-C40 주소에 타 계정 지정해도 내 자료만 응답
+PASS T08-C37 타 계정 패스키 조작 거절
+bob 세션으로 ?user=alice → 200 {"user":"bob","notes":["[가상] bob의 준비 중인 프로젝트 메모: 할 일 앱 프로토타입","[가상] bob의 지원하려는 곳 목록: 가짜회사 A, 가짜회사 B","[가상] bob의 개인 회고: 이번 달에는 꾸준히 운동하기"]}
+PASS T08-C38 반대 방향도 거절/격리, alice 자료 불변
+거절 전후 alice 자료 건수: 3 → 3
+PASS T08-C39 거절 전후 건수 동일
